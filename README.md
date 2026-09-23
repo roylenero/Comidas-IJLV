@@ -185,8 +185,8 @@ Nada de esto requiere tarjeta ni activar facturación.
 
 ```
 VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=TU-PROYECTO.web.app
-VITE_FIREBASE_PROJECT_ID=TU-PROYECTO
+VITE_FIREBASE_AUTH_DOMAIN=ijlv-comidas.web.app
+VITE_FIREBASE_PROJECT_ID=ijlv-comidas
 VITE_FIREBASE_APP_ID=...
 VITE_FIREBASE_MESSAGING_SENDER_ID=...
 ```
@@ -200,7 +200,7 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=...
    - **Agregar proveedor → Correo electrónico/contraseña** → activa **solo** el primer interruptor (“Correo electrónico/contraseña”). El segundo, **“Vínculo del correo electrónico (acceso sin contraseña)”, debe quedar desactivado** → Guardar.
    - **Agregar proveedor → Google** → Habilitar → elige el correo de asistencia del Instituto → Guardar.
 3. Pestaña **Configuración (Settings)**:
-   - **Dominios autorizados**: deben aparecer `TU-PROYECTO.web.app` y `TU-PROYECTO.firebaseapp.com` (y tu dominio propio si lo agregas).
+   - **Dominios autorizados**: deben aparecer `ijlv-comidas.web.app` y `ijlv-comidas.firebaseapp.com` (y tu dominio propio si lo agregas).
    - **Acciones de usuario / Protección contra la enumeración de correos**: déjala **activada** (es el valor predeterminado en proyectos nuevos).
 4. Pestaña **Plantillas (Templates)**:
    - Botón de idioma (lápiz junto a “Idioma de la plantilla”) → **Español**.
@@ -209,7 +209,7 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=...
 
 #### Acceso con Google en iPhone
 
-Safari bloquea el almacenamiento de terceros; para que “Continuar con Google” funcione bien usa como `VITE_FIREBASE_AUTH_DOMAIN` el **mismo dominio donde se publica la app** (`TU-PROYECTO.web.app`) y agrega en Google Cloud Console → *APIs y servicios* → *Credenciales* → cliente OAuth “Web client (auto created by Google Service)” el URI de redirección autorizado `https://TU-PROYECTO.web.app/__/auth/handler`.
+Safari bloquea el almacenamiento de terceros; para que “Continuar con Google” funcione bien usa como `VITE_FIREBASE_AUTH_DOMAIN` el **mismo dominio donde se publica la app** (`ijlv-comidas.web.app`) y agrega en Google Cloud Console → *APIs y servicios* → *Credenciales* → cliente OAuth “Web client (auto created by Google Service)” el URI de redirección autorizado `https://ijlv-comidas.web.app/__/auth/handler`.
 
 ### 4. Firestore
 
@@ -221,10 +221,10 @@ Safari bloquea el almacenamiento de terceros; para que “Continuar con Google�
 ```bash
 npm install            # incluye firebase-tools
 npx firebase login
-npx firebase use --add # elige tu proyecto y ponle alias "default"
+npx firebase use ijlv-comidas   # ya está configurado en .firebaserc
 ```
 
-(Esto reemplaza el marcador `FIREBASE_PROJECT_ID` de `.firebaserc`.)
+El ID del proyecto (`ijlv-comidas`) ya está en `.firebaserc`.
 
 ### 6. Desplegar reglas e índices
 
@@ -251,7 +251,7 @@ npm run build
 npx firebase deploy --only hosting
 ```
 
-La app queda en `https://TU-PROYECTO.web.app`.
+La app queda en `https://ijlv-comidas.web.app`.
 
 ### 9. Configuración inicial dentro de la app
 
