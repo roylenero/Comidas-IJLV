@@ -1,0 +1,72 @@
+/*
+ * DESIGN TOKENS
+ * Identidad NEUTRAL provisional: no es la identidad oficial del IJLV.
+ * Para aplicar colores institucionales, reemplaza únicamente los valores --brand-*
+ * (y el THEME_COLOR de vite.config.ts para que coincida con --brand-primary).
+ */
+:root {
+  /* Marca (reemplazables) */
+  --brand-primary: #2c5f7c;
+  --brand-primary-strong: #1f4760;
+  --brand-primary-soft: #e4eef3;
+  --brand-secondary: #3d7a5c;
+  --brand-accent: #d9982f;
+  --brand-on-primary: #ffffff;
+
+  /* Servicios: color + icono + texto (nunca solo color) */
+  --breakfast-ink: #8a4f00;
+  --breakfast-soft: #fcf0dc;
+  --lunch-ink: #245f45;
+  --lunch-soft: #e2f1e8;
+
+  /* Superficies y texto */
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-muted: #f0eee8;
+  --border: #e2ded4;
+  --border-strong: #c9c3b6;
+  --text: #1c2428;
+  --text-muted: #56626b;
+  --text-subtle: #6f7a82;
+
+  /* Estados */
+  --success-ink: #1f6b43;
+  --success-soft: #e0f2e8;
+  --danger-ink: #a8231b;
+  --danger-soft: #fbe7e5;
+  --warning-ink: #7a4b00;
+  --warning-soft: #fdf1d8;
+  --info-ink: var(--brand-primary-strong);
+  --info-soft: var(--brand-primary-soft);
+
+  --focus-ring: 0 0 0 3px #ffffff, 0 0 0 5px var(--brand-primary);
+
+  /* Tipografía */
+  --font-sans: 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.9375rem;
+  --text-base: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-display: 3.5rem;
+
+  /* Espaciado y forma */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgba(28, 36, 40, 0.06);
+  --shadow-sheet: 0 -8px 30px rgba(28, 36, 40, 0.14);
+
+  --tap: 48px;
+  --content-max: 40rem;
+  --admin-max: 72rem;
+}
