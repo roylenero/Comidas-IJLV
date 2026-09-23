@@ -36,6 +36,15 @@
         ]
       },
       {
+        "source": "**/!(*.*)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
         "source": "/manifest.webmanifest",
         "headers": [
           {
@@ -66,6 +75,9 @@
           }
         ]
       }
+    ],
+    "predeploy": [
+      "npm run build"
     ]
   },
   "emulators": {

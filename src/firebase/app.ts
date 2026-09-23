@@ -10,6 +10,7 @@ import { connectFirestoreEmulator, initializeFirestore, memoryLocalCache } from 
 
 const useEmulators = import.meta.env.VITE_USE_EMULATORS === 'true';
 
+// storageBucket se omite a propósito: la app no usa Firebase Storage (la imagen del menú vive en Firestore).
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || (useEmulators ? 'demo-api-key' : ''),
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || (useEmulators ? 'localhost' : ''),

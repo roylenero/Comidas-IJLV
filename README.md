@@ -89,6 +89,8 @@ Solo lo es quien tenga documento en `admins/{correo}` **y** el correo verificado
 
 ### Prueba obligatoria en Firebase real
 
+Procedimiento completo y script de verificación: [`docs/PRUEBAS_FIREBASE_REAL.md`](docs/PRUEBAS_FIREBASE_REAL.md) (prueba I: `node scripts/verify-real.mjs sesion-reset`).
+
 El emulador no reproduce dos comportamientos de Firebase real. Antes de abrir la app a las familias:
 
 1. **Revocación de sesión tras restablecer contraseña.** En el navegador A, crea una cuenta con un correo de prueba autorizado (sin verificarla). En el navegador B, usa *Olvidé mi contraseña* con ese correo, abre el enlace y crea otra contraseña. Vuelve al navegador A y recarga: debe quedar en la pantalla de acceso o en “Verifica tu correo”, **nunca** ver alumnos.
@@ -174,7 +176,7 @@ Nada de esto requiere tarjeta ni activar facturación.
 ### 1. Crear el proyecto
 
 1. Entra a <https://console.firebase.google.com> con la cuenta de Google del Instituto → **Agregar proyecto**.
-2. Nombre sugerido: `ijlv-comidas`. Anota el **ID del proyecto** (p. ej. `ijlv-comidas-1a2b3`).
+2. Proyecto creado: **`ijlv-comidas`** (plan Spark, Firestore `(default)` en `nam5`, modo producción).
 3. Google Analytics: no es necesario.
 4. El proyecto queda en plan **Spark** (gratuito). No lo cambies a Blaze.
 
@@ -185,11 +187,15 @@ Nada de esto requiere tarjeta ni activar facturación.
 
 ```
 VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=ijlv-comidas.web.app
+VITE_FIREBASE_AUTH_DOMAIN=ijlv-comidas.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=ijlv-comidas
-VITE_FIREBASE_APP_ID=...
+VITE_FIREBASE_STORAGE_BUCKET=ijlv-comidas.firebasestorage.app   # la app NO usa Storage; no se lee
 VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+VITE_USE_EMULATORS=false
 ```
+
+`.env.production.local` **no se sube al repositorio** (`.gitignore`); cada computadora que publique la app necesita su propia copia. `npm run build` se detiene con un error si falta la configuración o si `VITE_USE_EMULATORS=true`, para no publicar una app rota.
 
 > Estos valores son públicos por diseño (van dentro de la app). La seguridad la dan las reglas de Firestore. **Nunca** pongas en el proyecto credenciales de *service account*.
 
@@ -209,49 +215,60 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=...
 
 #### Acceso con Google en iPhone
 
-Safari bloquea el almacenamiento de terceros; para que “Continuar con Google” funcione bien usa como `VITE_FIREBASE_AUTH_DOMAIN` el **mismo dominio donde se publica la app** (`ijlv-comidas.web.app`) y agrega en Google Cloud Console → *APIs y servicios* → *Credenciales* → cliente OAuth “Web client (auto created by Google Service)” el URI de redirección autorizado `https://ijlv-comidas.web.app/__/auth/handler`.
+V1 usa el `authDomain` que entrega Firebase (`ijlv-comidas.firebaseapp.com`), que funciona sin configuración adicional y abre Google en ventana emergente. **Solo si** en la prueba real “Continuar con Google” falla en iPhone (Safari o app instalada), cambia `VITE_FIREBASE_AUTH_DOMAIN` a `ijlv-comidas.web.app`, agrega en Google Cloud Console → *APIs y servicios* → *Credenciales* → cliente OAuth “Web client (auto created by Google Service)” el URI de redirección `https://ijlv-comidas.web.app/__/auth/handler`, recompila y vuelve a publicar.
 
 ### 4. Firestore
 
 1. **Firestore Database → Crear base de datos** → modo **producción**.
 2. Región: una cercana (por ejemplo `nam5`). No se puede cambiar después.
 
-### 5. Instalar la CLI y vincular el proyecto
+### 5. Preparar tu computadora (una sola vez)
+
+Requisitos: [Node.js 22 LTS](https://nodejs.org) y Git.
 
 ```bash
-npm install            # incluye firebase-tools
-npx firebase login
-npx firebase use ijlv-comidas   # ya está configurado en .firebaserc
+git clone https://github.com/roylenero/Comidas-IJLV.git
+cd Comidas-IJLV
+git checkout claude/zealous-volta-vo2fsl
+npm ci
 ```
 
-El ID del proyecto (`ijlv-comidas`) ya está en `.firebaserc`.
-
-### 6. Desplegar reglas e índices
+Crea en esa carpeta el archivo `.env.production.local` (ver paso 2) y luego:
 
 ```bash
-npx firebase deploy --only firestore:rules,firestore:indexes
+npx firebase login            # abre el navegador: entra con la cuenta dueña del proyecto
+npx firebase projects:list    # debe aparecer ijlv-comidas
 ```
 
-Los índices tardan unos minutos en construirse (Consola → Firestore → Índices).
+El proyecto ya está fijado en `.firebaserc` (`ijlv-comidas`); no hace falta `firebase use`.
+
+### 6. Publicar reglas, índices y la app
+
+Desde la carpeta `Comidas-IJLV`:
+
+```bash
+npx firebase deploy --only firestore:rules,firestore:indexes,hosting
+```
+
+- Antes de publicar el Hosting se ejecuta `npm run build` automáticamente (`predeploy` en `firebase.json`).
+- No uses `--force`.
+- Los índices tardan unos minutos en construirse (Consola → Firestore → Índices).
 
 ### 7. Crear el primer administrador
 
 Por seguridad **ningún usuario puede hacerse administrador desde la app**; se hace en la consola (solo quien administra el proyecto de Firebase tiene acceso):
 
-1. Firestore Database → **Iniciar colección** → ID: `admins`.
-2. ID del documento: el correo del administrador **en minúsculas**, p. ej. `direccion@ijlv.edu.mx`.
-3. Agrega un campo `createdAt` de tipo *timestamp* (cualquier fecha) → Guardar.
+1. Firestore Database → pestaña **Datos** → **+ Iniciar colección** → ID de la colección: `admins` → Siguiente.
+2. **ID del documento**: el correo del administrador exactamente, **en minúsculas** (no uses “ID automático”).
+3. Campo: nombre `createdAt`, tipo **timestamp**, valor: la fecha y hora actuales → **Guardar**.
+
+Ese correo debe poder entrar con Google o con correo y contraseña **verificado**; si no está verificado, las reglas no le dan el rol.
 
 Repite para cada administrador. Para quitar a alguien, borra su documento.
 
-### 8. Publicar la app
+### 8. Pruebas con datos DEMO
 
-```bash
-npm run build
-npx firebase deploy --only hosting
-```
-
-La app queda en `https://ijlv-comidas.web.app`.
+La app queda en `https://ijlv-comidas.web.app`. Antes de cargar familias reales, sigue [`docs/PRUEBAS_FIREBASE_REAL.md`](docs/PRUEBAS_FIREBASE_REAL.md) (cuentas DEMO, pruebas A–I, Hosting/PWA y limpieza).
 
 ### 9. Configuración inicial dentro de la app
 
@@ -267,8 +284,9 @@ Hosting → **Agregar dominio personalizado** (p. ej. `comidas.ijlv.edu.mx`), si
 ### Cada actualización
 
 ```bash
-npm run check
-npx firebase deploy --only hosting,firestore:rules,firestore:indexes
+git pull
+npm ci
+npx firebase deploy --only firestore:rules,firestore:indexes,hosting
 ```
 
 Los usuarios verán “Hay una nueva versión disponible → Actualizar”.
