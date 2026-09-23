@@ -73,7 +73,7 @@ export function ManualOrderPage() {
       }
       const parts = [];
       if (created.length) parts.push(`Registrado: ${created.join(' y ')} para ${student.name}.`);
-      if (duplicated.length) parts.push(`${student.name} ya tenía ${duplicated.join(' y ')}; no se duplicó.`);
+      if (duplicated.length) parts.push(`${student.name} ya tenía pedido de ${duplicated.join(' y ')}; no se duplicó.`);
       setResult({ tone: created.length ? 'success' : 'info', text: parts.join(' ') });
       setServices(new Set());
     } catch (err) {

@@ -90,7 +90,7 @@ function OrderSheetContent({ date, service, price, students, alreadyOrdered, uid
         )}
         {alreadyActive.length > 0 && (
           <p className="banner banner--info" role="status">
-            {alreadyActive.map((a) => a.studentName).join(' y ')} ya tenía {label.lower} solicitado para este día. No se duplicó.
+            {alreadyActive.map((a) => a.studentName).join(' y ')} ya tenía pedido de {label.lower} para este día. No se duplicó.
           </p>
         )}
       </Sheet>

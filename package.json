@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rules": "firebase emulators:exec --only firestore --project demo-ijlv \"vitest run --config vitest.rules.config.ts\"",
-    "emulators": "firebase emulators:start --project demo-ijlv --import ./.emulator-data --export-on-exit",
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-ijlv",
     "seed:demo": "node scripts/seed-demo.mjs",
     "check": "npm run lint && npm run typecheck && npm test && npm run test:rules && npm run build"
   },
