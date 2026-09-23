@@ -1,0 +1,324 @@
+rules_version = '2';
+
+// =============================================================================
+// IJLV Comidas — Reglas de seguridad de Cloud Firestore
+//
+// Principios:
+//  * Identidad = correo VERIFICADO del token de Firebase Auth (email_verified).
+//  * Administrador  = existe admins/{correo}. Solo se crea desde la consola de
+//    Firebase; ningún cliente puede escribir en admins (no hay autoasignación).
+//  * Padre/madre    = existe authorizedEmails/{correo} → familyId.
+//  * Todo horario se valida con request.time (hora del SERVIDOR) contra el
+//    cutoffAt guardado en menuDays. El reloj del dispositivo no interviene.
+//  * Anti-duplicados: el ID del pedido es {fecha}_{alumno}_{servicio}; un
+//    alumno solo puede tener un documento por fecha y servicio.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------- helpers
+    function docPath(collection, id) {
+      return /databases/$(database)/documents/$(collection)/$(id);
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verified() {
+      return signedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function isAdmin() {
+      return verified() && exists(docPath('admins', myEmail()));
+    }
+
+    function hasFamily() {
+      return verified() && exists(docPath('authorizedEmails', myEmail()));
+    }
+
+    function myFamilyId() {
+      return get(docPath('authorizedEmails', myEmail())).data.familyId;
+    }
+
+    // Padre de familia activa o administrador.
+    function isMember() {
+      return isAdmin() || hasFamily();
+    }
+
+    function isValidDate(value) {
+      return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function isShortText(value, max) {
+      return value is string && value.size() > 0 && value.size() <= max;
+    }
+
+    function isPrice(value) {
+      return (value is int || value is float) && value >= 0 && value <= 10000;
+    }
+
+    // ---------------------------------------------------------------- admins
+    // Cada usuario solo puede comprobar su propio documento. Sin escrituras
+    // desde clientes: el primer administrador se crea en la consola.
+    match /admins/{email} {
+      allow get: if verified() && email == myEmail();
+      allow list, write: if false;
+    }
+
+    // ------------------------------------------------------- authorizedEmails
+    // {correo en minúsculas} → { familyId, createdAt }
+    match /authorizedEmails/{email} {
+      allow get: if (verified() && email == myEmail()) || isAdmin();
+      allow list: if isAdmin();
+      allow create, update: if isAdmin()
+        && email == email.lower()
+        && email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+        && request.resource.data.keys().hasOnly(['familyId', 'createdAt'])
+        && request.resource.data.familyId is string
+        && existsAfter(docPath('families', request.resource.data.familyId))
+        && request.resource.data.createdAt is timestamp;
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------- families
+    match /families/{familyId} {
+      allow get: if isAdmin() || (hasFamily() && myFamilyId() == familyId);
+      allow list: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['name', 'active', 'createdAt', 'updatedAt'])
+        && isShortText(request.resource.data.name, 120)
+        && request.resource.data.active is bool
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------- students
+    match /students/{studentId} {
+      allow read: if isAdmin() || (hasFamily() && resource.data.familyId == myFamilyId());
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['name', 'familyId', 'active', 'createdAt', 'updatedAt'])
+        && isShortText(request.resource.data.name, 120)
+        && request.resource.data.familyId is string
+        && existsAfter(docPath('families', request.resource.data.familyId))
+        && request.resource.data.active is bool
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------- settings
+    match /settings/{settingId} {
+      allow read: if isMember();
+      allow write: if isAdmin()
+        && settingId == 'app'
+        && request.resource.data.keys().hasOnly(['prices', 'updatedAt'])
+        && request.resource.data.prices.keys().hasOnly(['breakfast', 'lunch'])
+        && isPrice(request.resource.data.prices.breakfast)
+        && isPrice(request.resource.data.prices.lunch)
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    // ------------------------------------------------------------------- menú
+    function isValidService(s) {
+      return s is map
+        && s.keys().hasOnly(['available', 'description', 'cutoffAt'])
+        && s.available is bool
+        && s.description is string
+        && s.description.size() <= 1000
+        && s.cutoffAt is timestamp;
+    }
+
+    match /menuWeeks/{weekId} {
+      allow read: if isMember();
+      allow write: if isAdmin()
+        && isValidDate(weekId)
+        && request.resource.data.keys().hasOnly(['weekStart', 'hasImage', 'imageUpdatedAt', 'updatedAt'])
+        && request.resource.data.weekStart == weekId
+        && request.resource.data.hasImage is bool
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    match /menuDays/{date} {
+      allow read: if isMember();
+      allow write: if isAdmin()
+        && isValidDate(date)
+        && request.resource.data.keys().hasOnly(['date', 'weekId', 'noService', 'breakfast', 'lunch', 'updatedAt'])
+        && request.resource.data.date == date
+        && isValidDate(request.resource.data.weekId)
+        && request.resource.data.noService is bool
+        && isValidService(request.resource.data.breakfast)
+        && isValidService(request.resource.data.lunch)
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    // Imagen semanal comprimida como Data URL (sin Cloud Storage).
+    match /menuAssets/{weekId} {
+      allow read: if isMember();
+      allow write: if isAdmin()
+        && isValidDate(weekId)
+        && request.resource.data.keys().hasOnly(['dataUrl', 'mimeType', 'width', 'height', 'bytes', 'updatedAt'])
+        && request.resource.data.dataUrl is string
+        && request.resource.data.dataUrl.size() <= 700000
+        && request.resource.data.mimeType in ['image/webp', 'image/jpeg', 'image/png']
+        && request.resource.data.width is int
+        && request.resource.data.height is int
+        && request.resource.data.bytes is int
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // ----------------------------------------------------------------- pedidos
+    function orderFields() {
+      return ['date', 'studentId', 'studentName', 'familyId', 'service', 'priceAtOrder', 'status',
+              'paymentStatus', 'source', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'];
+    }
+
+    function menuDay(date) {
+      return get(docPath('menuDays', date)).data;
+    }
+
+    function currentPrice(svc) {
+      return get(docPath('settings', 'app')).data.prices[svc];
+    }
+
+    // Servicio disponible y ANTES del cierre según la hora del servidor.
+    function serviceOpen(date, svc) {
+      let day = menuDay(date);
+      return day.noService == false
+        && day[svc].available == true
+        && request.time < day[svc].cutoffAt;
+    }
+
+    function beforeCutoff(date, svc) {
+      return request.time < menuDay(date)[svc].cutoffAt;
+    }
+
+    // Nota: 'service' es palabra reservada en las reglas; por eso se accede como d['service'].
+    function validOrderShape(orderId, d) {
+      return d.keys().hasOnly(orderFields())
+        && d.keys().hasAll(orderFields())
+        && isValidDate(d.date)
+        && d['service'] in ['breakfast', 'lunch']
+        && d.studentId is string
+        && orderId == d.date + '_' + d.studentId + '_' + d['service']
+        && d.familyId is string
+        && isShortText(d.studentName, 120)
+        && isPrice(d.priceAtOrder)
+        && d.status in ['active', 'cancelled']
+        && d.paymentStatus in ['pending', 'paid']
+        && d.source in ['parent', 'admin'];
+    }
+
+    // Padre crea un pedido para un alumno activo de SU familia activa.
+    function parentCanCreate(orderId) {
+      let d = request.resource.data;
+      let student = get(docPath('students', d.studentId)).data;
+      let familyId = myFamilyId();
+      return hasFamily()
+        && validOrderShape(orderId, d)
+        && student.familyId == familyId
+        && student.active == true
+        && get(docPath('families', familyId)).data.active == true
+        && d.familyId == familyId
+        && d.studentName == student.name
+        && d.status == 'active'
+        && d.paymentStatus == 'pending'
+        && d.source == 'parent'
+        && d.priceAtOrder == currentPrice(d['service'])
+        && d.createdBy == request.auth.uid
+        && d.updatedBy == request.auth.uid
+        && d.createdAt == request.time
+        && d.updatedAt == request.time
+        && serviceOpen(d.date, d['service']);
+    }
+
+    // Padre cancela un pedido activo propio antes del cierre.
+    function parentCanCancel() {
+      let d = request.resource.data;
+      let r = resource.data;
+      return hasFamily()
+        && r.familyId == myFamilyId()
+        && r.status == 'active'
+        && d.status == 'cancelled'
+        && d.diff(r).affectedKeys().hasOnly(['status', 'updatedAt', 'updatedBy'])
+        && d.updatedAt == request.time
+        && d.updatedBy == request.auth.uid
+        && beforeCutoff(r.date, r['service']);
+    }
+
+    // Padre vuelve a solicitar un pedido cancelado, con el precio vigente.
+    function parentCanReactivate() {
+      let d = request.resource.data;
+      let r = resource.data;
+      let familyId = myFamilyId();
+      let student = get(docPath('students', r.studentId)).data;
+      return hasFamily()
+        && r.familyId == familyId
+        && student.familyId == familyId
+        && student.active == true
+        && get(docPath('families', familyId)).data.active == true
+        && r.status == 'cancelled'
+        && d.status == 'active'
+        && d.diff(r).affectedKeys().hasOnly(['status', 'priceAtOrder', 'updatedAt', 'updatedBy'])
+        && d.priceAtOrder == currentPrice(r['service'])
+        && d.updatedAt == request.time
+        && d.updatedBy == request.auth.uid
+        && serviceOpen(r.date, r['service']);
+    }
+
+    // Administración: sin restricción de horario, pero con forma válida e
+    // ID determinista (el anti-duplicados aplica también a administración).
+    function adminCanCreate(orderId) {
+      let d = request.resource.data;
+      return isAdmin()
+        && validOrderShape(orderId, d)
+        && exists(docPath('students', d.studentId))
+        && d.source == 'admin'
+        && d.createdBy == request.auth.uid
+        && d.updatedBy == request.auth.uid
+        && d.createdAt == request.time
+        && d.updatedAt == request.time;
+    }
+
+    function adminCanUpdate(orderId) {
+      let d = request.resource.data;
+      return isAdmin()
+        && validOrderShape(orderId, d)
+        && !d.diff(resource.data).affectedKeys()
+              .hasAny(['date', 'studentId', 'familyId', 'service', 'source', 'createdAt', 'createdBy'])
+        && d.updatedBy == request.auth.uid
+        && d.updatedAt == request.time;
+    }
+
+    // Leer un pedido que todavía NO existe (necesario para la transacción que
+    // evita duplicados): solo si el alumno del ID pertenece a mi familia.
+    function isMyMissingOrder(orderId) {
+      return get(docPath('students', orderId.split('_')[1])).data.familyId == myFamilyId();
+    }
+
+    match /orders/{orderId} {
+      allow get: if isAdmin()
+        || (hasFamily() && resource == null && isMyMissingOrder(orderId))
+        || (hasFamily() && resource != null && resource.data.familyId == myFamilyId());
+      allow list: if isAdmin() || (hasFamily() && resource.data.familyId == myFamilyId());
+      allow create: if adminCanCreate(orderId) || parentCanCreate(orderId);
+      allow update: if adminCanUpdate(orderId) || parentCanCancel() || parentCanReactivate();
+      // El historial no se borra: se cancela.
+      allow delete: if false;
+    }
+
+    // Cualquier otra ruta queda cerrada.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
