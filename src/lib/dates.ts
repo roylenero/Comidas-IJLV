@@ -70,7 +70,8 @@ export function isBeforeCutoff(cutoff: Date, nowMs: number = Date.now()): boolea
 
 export function formatCutoffTime(service: ServiceType): string {
   const { hour, minute } = SERVICE_CUTOFFS[service];
-  return DateTime.fromObject({ hour, minute }, { zone: TIMEZONE }).toFormat('h:mm a').replace('AM', 'a. m.').replace('PM', 'p. m.');
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'a. m.' : 'p. m.'}`;
 }
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

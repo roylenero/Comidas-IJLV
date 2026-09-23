@@ -79,7 +79,7 @@ export function LoginPage({ redirectError }: { redirectError?: string | null }) 
 
       <div className="segmented" role="group" aria-label="Tipo de acceso" style={{ alignSelf: 'stretch' }}>
         <button type="button" className="grow" aria-pressed={mode === 'signin'} onClick={() => setMode('signin')}>
-          Ya tengo contraseña
+          Ya tengo cuenta
         </button>
         <button type="button" className="grow" aria-pressed={mode === 'create'} onClick={() => setMode('create')}>
           Primera vez

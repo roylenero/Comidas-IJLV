@@ -1,0 +1,249 @@
+/* ---------- Tira semanal ---------- */
+.week-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-2);
+}
+
+.week-strip__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 76px;
+  padding: var(--space-2) 0;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.week-strip__day:hover { border-color: var(--border-strong); }
+.week-strip__weekday { font-size: var(--text-sm); font-weight: 600; color: var(--text-muted); }
+.week-strip__num { font-size: var(--text-xl); font-weight: 800; line-height: 1.1; }
+.week-strip__mark { font-size: 10px; min-height: 14px; color: var(--success-ink); }
+.week-strip__day[data-today] .week-strip__weekday { color: var(--brand-primary-strong); }
+.week-strip__day[data-today] { border-color: var(--brand-primary); }
+
+.week-strip__day[aria-pressed='true'] {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: var(--brand-on-primary);
+}
+.week-strip__day[aria-pressed='true'] .week-strip__weekday,
+.week-strip__day[aria-pressed='true'] .week-strip__mark { color: var(--brand-on-primary); }
+
+.week-range { font-weight: 700; font-size: var(--text-base); }
+
+.day-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xl);
+}
+
+/* ---------- Tarjeta de servicio ---------- */
+.service-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.service-card__title { font-size: var(--text-lg); }
+.service-card__price { font-size: var(--text-xl); font-weight: 800; }
+.service-card__desc { white-space: pre-line; font-size: var(--text-base); }
+
+.ordered-list {
+  background: var(--success-soft);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-3);
+}
+.ordered-list__item { min-height: 48px; color: var(--success-ink); }
+.ordered-list .btn--ghost { color: var(--danger-ink); }
+.success-icon { color: var(--success-ink); flex-shrink: 0; }
+
+/* ---------- Resumen del pedido ---------- */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+.summary .list > li { border-color: var(--border-strong); }
+.summary__total {
+  padding-top: var(--space-3);
+  border-top: 2px solid var(--text);
+  font-size: var(--text-lg);
+  font-weight: 800;
+}
+
+/* ---------- Mis pedidos ---------- */
+.order-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+}
+.order-row:first-child { padding-top: 0; }
+.order-row:last-child { padding-bottom: 0; }
+.order-row > .service-icon { align-self: start; }
+.order-row__actions { display: flex; justify-content: flex-end; align-items: center; min-height: 44px; text-align: right; }
+
+.strike { text-decoration: line-through; }
+
+.past-orders summary {
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--brand-primary-strong);
+}
+
+/* ---------- Visor de imagen ---------- */
+.viewer {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  background: #111;
+  color: #fff;
+}
+.viewer::backdrop { background: #111; }
+.viewer__bar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: calc(var(--space-2) + env(safe-area-inset-top)) var(--space-3) var(--space-2) var(--space-4);
+  background: rgba(17, 17, 17, 0.92);
+  z-index: 1;
+}
+.viewer__bar .icon-btn { color: #fff; }
+.viewer__bar .icon-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.viewer__bar .icon-btn:disabled { opacity: 0.4; }
+.viewer__canvas {
+  height: calc(100dvh - 60px);
+  overflow: auto;
+  touch-action: pan-x pan-y pinch-zoom;
+  -webkit-overflow-scrolling: touch;
+}
+.viewer__canvas img { margin: 0 auto; height: auto; }
+.viewer .state { color: #ddd; }
+.viewer .state h2 { color: #fff; }
+
+/* ---------- Administración ---------- */
+@media (max-width: 1023px) {
+  .app-header--admin .app-header__inner { flex-wrap: wrap; padding-bottom: 0; }
+  .app-header--admin .nav {
+    order: 3;
+    width: calc(100% + 2 * var(--space-4));
+    margin: 0 calc(-1 * var(--space-4));
+    padding: 0 var(--space-4) var(--space-2);
+  }
+}
+
+.date-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.date-title {
+  font-size: var(--text-lg);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.stat__num { font-size: var(--text-display); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat__label { font-size: var(--text-sm); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.stat--breakfast { border-top: 6px solid var(--brand-accent); }
+.stat--lunch { border-top: 6px solid var(--brand-secondary); }
+
+@media (min-width: 768px) {
+  .stat__num { font-size: 4.5rem; }
+}
+
+.table-list > li { display: flex; align-items: center; gap: var(--space-3); min-height: 60px; padding: var(--space-2) 0; flex-wrap: wrap; }
+
+.admin-grid {
+  display: grid;
+  gap: var(--space-4);
+}
+@media (min-width: 900px) {
+  .admin-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.menu-day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.menu-day[data-noservice] .menu-day__services { opacity: 0.5; }
+.menu-day__services { display: grid; gap: var(--space-4); }
+@media (min-width: 900px) {
+  .menu-day__services { grid-template-columns: 1fr 1fr; }
+}
+
+.image-preview {
+  max-height: 360px;
+  width: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.family-card summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+}
+.family-card summary::-webkit-details-marker { display: none; }
+.family-card[open] summary { margin-bottom: var(--space-4); }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px 4px 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-muted);
+  font-size: var(--text-sm);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.chip .icon-btn { width: 36px; height: 36px; }
+
+.inline-form { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.inline-form .input { flex: 1; min-width: 12rem; }
