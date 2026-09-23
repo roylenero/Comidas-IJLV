@@ -6,6 +6,17 @@ import { describeError } from '../../lib/errors';
 import type { Family, Student } from '../../types/models';
 import { SessionContext, type Session } from '../../hooks/useSession';
 
+/**
+ * Foto de la identidad en cada cambio de token. Se guarda como objeto NUEVO porque
+ * Firebase entrega el mismo objeto User aunque cambie el correo o la verificación.
+ */
+interface Identity {
+  user: User;
+  uid: string;
+  email: string | null;
+  emailVerified: boolean;
+}
+
 type AccessResult =
   | { key: string; status: 'error'; message: string }
   | { key: string; status: 'resolved'; isAdmin: boolean; familyId: string | null };
@@ -18,8 +29,7 @@ interface FamilyData {
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null | undefined>(undefined);
-  const [verified, setVerified] = useState(false);
+  const [identity, setIdentity] = useState<Identity | null | undefined>(undefined);
   const [accessResult, setAccessResult] = useState<AccessResult | null>(null);
   const [familyData, setFamilyData] = useState<FamilyData | null>(null);
   const [retryKey, setRetryKey] = useState(0);
@@ -27,31 +37,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     getRedirectResult(auth).catch((err) => setRedirectError(describeError(err)));
-    return onIdTokenChanged(auth, (u) => {
-      setUser(u);
-      setVerified(Boolean(u?.emailVerified));
-    });
+    return onIdTokenChanged(auth, (u) =>
+      setIdentity(u ? { user: u, uid: u.uid, email: u.email, emailVerified: u.emailVerified } : null),
+    );
   }, []);
 
-  const email = user?.email ?? null;
-
-  // La clave evita mostrar el resultado de un correo anterior (o de un intento previo).
-  const accessKey = email && verified ? `${email}#${retryKey}` : null;
+  // La autorización se recalcula si cambia la cuenta, el correo o su verificación.
+  // Nada se hereda de un correo anterior.
+  const accessKey =
+    identity && identity.email && identity.emailVerified ? `${identity.uid}|${identity.email}|${retryKey}` : null;
   const access = accessResult && accessResult.key === accessKey ? accessResult : null;
 
   useEffect(() => {
-    if (!accessKey || !email) return;
+    if (!accessKey || !identity) return;
     let cancelled = false;
-    resolveAccess(email)
+    resolveAccess(identity.user)
       .then((info) => !cancelled && setAccessResult({ key: accessKey, status: 'resolved', ...info }))
       .catch((err) => !cancelled && setAccessResult({ key: accessKey, status: 'error', message: describeError(err) }));
     return () => {
       cancelled = true;
     };
-  }, [accessKey, email]);
+    // accessKey codifica uid, correo y verificación de `identity`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessKey]);
 
   const familyId = access?.status === 'resolved' ? access.familyId : null;
-  const familyKey = familyId ? `${familyId}#${retryKey}` : null;
+  const familyKey = familyId && accessKey ? `${familyId}|${accessKey}` : null;
   const current = familyData && familyData.key === familyKey ? familyData : null;
 
   useEffect(() => {
@@ -69,34 +80,34 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const session = useMemo<Session>(() => {
     const retry = () => setRetryKey((k) => k + 1);
-    if (user === undefined) return { status: 'loading' };
-    if (user === null) return { status: 'signedOut', redirectError };
-    if (!verified) return { status: 'unverified', user };
+    if (identity === undefined) return { status: 'loading' };
+    if (identity === null) return { status: 'signedOut', redirectError };
+    const { user } = identity;
+    // Sin correo verificado no se consulta ni se muestra ningún dato familiar.
+    if (!identity.email || !identity.emailVerified) return { status: 'unverified', user };
     if (!access) return { status: 'loading' };
     if (access.status === 'error') return { status: 'error', user, message: access.message, retry };
 
-    const hasFamily = Boolean(access.familyId);
-    if (hasFamily && current?.error) return { status: 'error', user, message: current.error, retry };
-    const family = current?.family;
-    const students = current?.students;
-    if (hasFamily && (family === undefined || students === undefined)) return { status: 'loading' };
-    const familyActive = hasFamily && family?.active === true;
-
-    if (!access.isAdmin && (!familyActive || !students || students.length === 0)) {
-      return { status: 'noAccess', user };
+    if (access.familyId) {
+      if (current?.error) return { status: 'error', user, message: current.error, retry };
+      if (current?.family === undefined || current?.students === undefined) return { status: 'loading' };
     }
+    const family = access.familyId && current?.family?.active ? current.family : null;
+    const students = family ? current!.students! : [];
+
+    if (!access.isAdmin && (!family || students.length === 0)) return { status: 'noAccess', user };
 
     return {
       status: 'ready',
       user,
-      email: user.email!,
+      email: identity.email,
       isAdmin: access.isAdmin,
-      familyId: familyActive ? access.familyId : null,
-      family: familyActive ? family! : null,
-      students: familyActive ? students! : [],
+      familyId: family ? family.id : null,
+      family,
+      students,
       retry,
     };
-  }, [user, verified, access, current, redirectError]);
+  }, [identity, access, current, redirectError]);
 
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
 }

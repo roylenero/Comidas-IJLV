@@ -8,7 +8,9 @@
  *   admin.demo@ijlv.test      → administrador
  *   familia1.demo@ijlv.test   → Familia Demo 1 (Mateo Demo, Sofía Demo)
  *   familia2.demo@ijlv.test   → Familia Demo 2 (Lucía Demo)
- *   sinalumnos.demo@ijlv.test → correo sin alumnos (pantalla "sin acceso")
+ *   sinalumnos.demo@ijlv.test → correo verificado sin alumnos (pantalla "sin acceso")
+ *   sinverificar.demo@ijlv.test → correo de la Familia Demo 1 SIN verificar
+ *                                 (pantalla "Verifica tu correo"; no ve ningún dato)
  */
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
@@ -36,6 +38,7 @@ const USERS = [
   { email: 'familia1.demo@ijlv.test', name: 'Familia Demo 1' },
   { email: 'familia2.demo@ijlv.test', name: 'Familia Demo 2' },
   { email: 'sinalumnos.demo@ijlv.test', name: 'Sin alumnos DEMO' },
+  { email: 'sinverificar.demo@ijlv.test', name: 'Sin verificar DEMO', emailVerified: false },
 ];
 
 const MENUS = [
@@ -46,12 +49,12 @@ const MENUS = [
   ['Sincronizadas DEMO\nFruta picada', 'Pasta a la boloñesa DEMO\nEnsalada verde\nAgua de melón'],
 ];
 
-async function upsertUser({ email, name }) {
+async function upsertUser({ email, name, emailVerified = true }) {
   try {
     const u = await auth.getUserByEmail(email);
     return u.uid;
   } catch {
-    const u = await auth.createUser({ email, password: PASSWORD, displayName: name, emailVerified: true });
+    const u = await auth.createUser({ email, password: PASSWORD, displayName: name, emailVerified });
     return u.uid;
   }
 }
@@ -73,6 +76,7 @@ async function main() {
   batch.set(db.doc('families/demo-fam-2'), { name: 'Familia Demo 2', active: true, createdAt: now, updatedAt: now });
   batch.set(db.doc('authorizedEmails/familia1.demo@ijlv.test'), { familyId: 'demo-fam-1', createdAt: now });
   batch.set(db.doc('authorizedEmails/familia2.demo@ijlv.test'), { familyId: 'demo-fam-2', createdAt: now });
+  batch.set(db.doc('authorizedEmails/sinverificar.demo@ijlv.test'), { familyId: 'demo-fam-1', createdAt: now });
   // El admin DEMO también es tutor de la Familia Demo 2, para probar "Vista familia".
   batch.set(db.doc('authorizedEmails/admin.demo@ijlv.test'), { familyId: 'demo-fam-2', createdAt: now });
   const students = [

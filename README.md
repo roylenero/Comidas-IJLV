@@ -13,7 +13,7 @@ Costo de infraestructura: **$0 MXN** (plan Spark de Firebase, sin tarjeta, sin C
 
 1. [Stack](#stack)
 2. [Reglas del negocio](#reglas-del-negocio)
-3. [Acceso de padres: decisión importante](#acceso-de-padres-decisión-importante)
+3. [Acceso de padres y seguridad](#acceso-de-padres-y-seguridad)
 4. [Desarrollo local](#desarrollo-local)
 5. [Pruebas](#pruebas)
 6. [Puesta en marcha en Firebase (paso a paso)](#puesta-en-marcha-en-firebase-paso-a-paso)
@@ -46,18 +46,53 @@ Zona horaria oficial `America/Mexico_City`, locale `es-MX`, moneda MXN.
 
 Horarios, teléfono y zona horaria están centralizados en [`src/config/business.ts`](src/config/business.ts). Los precios **no** están ahí: viven en Firestore.
 
-## Acceso de padres: decisión importante
+## Acceso de padres y seguridad
 
-El requerimiento original prefería **enlace mágico por correo** (email link). En el plan gratuito Spark, Firebase limita el envío de enlaces de acceso a **5 correos por día** para todo el proyecto; ampliarlo exige agregar facturación. Con ~70 familias y varios dispositivos eso haría inviable la puesta en marcha, así que V1 usa:
+**Autenticarse no equivale a estar autorizado.** V1 separa dos preguntas:
 
-1. **Continuar con Google** (un toque, sin límite de envíos). Funciona para cualquier correo que sea cuenta de Google (Gmail o correos institucionales en Google Workspace).
-2. **Correo y contraseña** para quien no use Google: la primera vez el padre crea una contraseña y confirma su correo con un enlace de verificación.
+1. **¿Quién eres?** (autenticación) — dos métodos:
+   - **Continuar con Google**.
+   - **Entrar con correo** (correo y contraseña de Firebase), con **verificación del correo obligatoria**.
+2. **¿Qué puedes ver?** (autorización) — **una sola capa, igual para ambos métodos**: el correo debe estar **verificado**, estar **previamente cargado por el IJLV** en una familia y esa familia debe estar **activa**. Se evalúa en las reglas de Firestore en *cada* petición, con el correo actual de la sesión.
 
-En ambos casos **no hay registro de datos**: el sistema reconoce el correo (debe estar dado de alta por administración) y muestra automáticamente a sus hijos. La sesión queda guardada en el dispositivo, así que normalmente se inicia sesión una sola vez. Un correo que no está dado de alta ve: *“No encontramos alumnos asociados a este correo. Comunícate con el Instituto para verificar tus datos.”*
+El padre nunca registra hijos ni crea familias: si su correo verificado no está cargado por el IJLV, ve *“No encontramos alumnos asociados a este correo. Comunícate con el Instituto para verificar tus datos.”* y no obtiene ningún dato.
 
-La seguridad no depende del método: las reglas exigen un **correo verificado** (`email_verified`) y lo comparan con los correos autorizados.
+V1 **no usa enlace mágico** (en el plan gratuito solo permite 5 envíos al día para todo el proyecto).
 
-> Los límites de correos de verificación y de restablecimiento de contraseña del plan Spark son distintos (mayores) que los del enlace mágico, pero Google los cambia de vez en cuando. Consulta la tabla vigente en <https://firebase.google.com/docs/auth/limits> antes de la puesta en marcha.
+### Primera activación con correo
+
+1. Pantalla inicial → **Entrar con correo** → **¿Primera vez? Crear contraseña**.
+2. Escribe el correo que tiene registrado el IJLV y una contraseña (mínimo 8 caracteres).
+3. Llega un mensaje de verificación. Mientras no lo abra, la app solo muestra **“Verifica tu correo”** con tres opciones: *Ya verifiqué mi correo*, *Reenviar correo de verificación* y *Cerrar sesión*. No se consulta ni se muestra ninguna familia, alumno, pedido o pago (y las reglas lo impiden aunque se manipule la app).
+4. Abre el enlace del mensaje y toca **Ya verifiqué mi correo**: la app vuelve a consultar el estado real de la cuenta, obtiene una sesión nueva y entonces comprueba si el correo está autorizado.
+5. Si lo está, ve a sus hijos. La sesión queda guardada en el dispositivo.
+
+Si al crear la contraseña aparece *“Este correo ya tiene una contraseña”*, debe usar **Olvidé mi contraseña** (ver siguiente punto).
+
+### Olvidé mi contraseña
+
+Envía un mensaje para crear una contraseña nueva. La respuesta es siempre la misma (*“Si hay una cuenta con ese correo…”*), para no revelar qué correos existen. Abrir ese enlace también prueba que el buzón es suyo, por lo que el correo queda verificado.
+
+### Si alguien se adelanta a crear la cuenta con el correo de un padre
+
+- Esa cuenta queda **sin verificar** → las reglas no le dan acceso a nada (probado).
+- Cuando el padre real usa **Olvidé mi contraseña**, la contraseña del intruso deja de servir (probado) y, en Firebase real, sus sesiones abiertas se revocan (ver *Prueba obligatoria en Firebase real*).
+- Riesgo residual: si el padre abre un correo de verificación **que él no pidió**, verificaría la cuenta del intruso. Por eso la plantilla del correo debe decir que lo ignore si no creó una contraseña (paso 3 de la puesta en marcha) y, ante cualquier duda, basta con usar *Olvidé mi contraseña*. Para quienes tengan cuenta de Google, **Continuar con Google** evita este escenario.
+
+### Cambio de correo
+
+La autorización siempre usa el correo **actual y verificado** de la sesión. Si una cuenta cambia de correo, pierde en la siguiente petición el acceso de la familia anterior y solo obtendría otra si el nuevo correo está autorizado **y** verificado (probado). La app vuelve a validar automáticamente cuando cambia el correo.
+
+### Administradores
+
+Solo lo es quien tenga documento en `admins/{correo}` **y** el correo verificado. Esa colección no se puede escribir desde la app (ni siquiera por un administrador): se gestiona en la consola de Firebase. Cambiar el correo, editar la app, `localStorage` o las peticiones no da ese rol (probado).
+
+### Prueba obligatoria en Firebase real
+
+El emulador no reproduce dos comportamientos de Firebase real. Antes de abrir la app a las familias:
+
+1. **Revocación de sesión tras restablecer contraseña.** En el navegador A, crea una cuenta con un correo de prueba autorizado (sin verificarla). En el navegador B, usa *Olvidé mi contraseña* con ese correo, abre el enlace y crea otra contraseña. Vuelve al navegador A y recarga: debe quedar en la pantalla de acceso o en “Verifica tu correo”, **nunca** ver alumnos.
+2. **Google.** Entrar con una cuenta de Google autorizada (ve a sus hijos) y con una no autorizada (ve “No encontramos alumnos…”).
 
 ---
 
@@ -79,14 +114,15 @@ echo "VITE_USE_EMULATORS=true" > .env.development.local
 npm run dev
 ```
 
-Abre <http://localhost:5173>. Cuentas DEMO (contraseña `demo1234`, opción “Ya tengo cuenta”):
+Abre <http://localhost:5173>. Cuentas DEMO (contraseña `demo1234`, botón “Entrar con correo”):
 
 | Correo | Rol |
 |---|---|
 | `admin.demo@ijlv.test` | Administración (también tutor de “Familia Demo 2”) |
 | `familia1.demo@ijlv.test` | Familia Demo 1: Mateo Demo y Sofía Demo |
 | `familia2.demo@ijlv.test` | Familia Demo 2: Lucía Demo |
-| `sinalumnos.demo@ijlv.test` | Correo sin alumnos (pantalla de “no encontramos alumnos”) |
+| `sinalumnos.demo@ijlv.test` | Correo verificado sin alumnos (pantalla de “no encontramos alumnos”) |
+| `sinverificar.demo@ijlv.test` | Correo de la Familia Demo 1 **sin verificar**: solo ve “Verifica tu correo”. El enlace aparece en la terminal de los emuladores al tocar “Reenviar”. |
 
 Los datos DEMO **solo existen en el emulador**: el script se niega a ejecutarse contra un proyecto que no empiece con `demo-`. Se borran solos al detener el emulador.
 
@@ -94,7 +130,7 @@ Los datos DEMO **solo existen en el emulador**: el script se niega a ejecutarse 
 
 ```bash
 npm test            # unitarias y de componentes (fechas/cierres, CSV, compresión, offline, multihijo)
-npm run test:rules  # reglas de seguridad contra el emulador de Firestore
+npm run test:rules  # reglas de seguridad + flujo real de Auth contra los emuladores
 npm run lint
 npm run typecheck
 npm run build
@@ -114,6 +150,20 @@ Cobertura de los escenarios críticos del proyecto:
 | 20 | Sin internet nunca “Pedido confirmado” | `src/features/parent/OrderSheet.test.tsx`, `src/lib/errors.test.ts` |
 | 21 | Cambio de precio no altera históricos | `tests/rules` |
 | 22 | Padre con dos hijos | `tests/rules` + `OrderSheet.test.tsx` |
+
+Endurecimiento de acceso (autenticado ≠ autorizado):
+
+| Caso | Prueba |
+|---|---|
+| A. Correo+contraseña sin verificar (correo de una familia real): no lee familia, alumnos, pedidos, pagos ni crea pedidos | `tests/rules/firestore.rules.test.ts`, `tests/rules/auth-flow.test.ts` (emulador de Auth real), `SessionProvider.test.tsx` |
+| B. Verificado y autorizado: solo su familia | ídem |
+| C. Verificado pero no registrado | ídem |
+| D. Suplantación: cuenta sin verificar con el correo de un padre; el dueño la recupera con “Olvidé mi contraseña” | `firestore.rules.test.ts`, `auth-flow.test.ts` |
+| E/F. Otra familia / studentId de otra familia | `firestore.rules.test.ts` |
+| G. Google autorizado / no autorizado / no verificado (misma capa de permisos) | `firestore.rules.test.ts` (token de proveedor `google.com`), `SessionProvider.test.tsx`; inicio de sesión con Google real: prueba manual |
+| H. Cambio de correo | `firestore.rules.test.ts`, `auth-flow.test.ts` (`verifyBeforeUpdateEmail` real), `SessionProvider.test.tsx` |
+| Familia desactivada pierde el acceso; nadie se autoasigna admin | `firestore.rules.test.ts` |
+| Pantallas de acceso y “Verifica tu correo” | `AuthScreens.test.tsx` |
 
 ---
 
@@ -145,11 +195,17 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=...
 
 ### 3. Authentication
 
-1. **Authentication → Comenzar → Método de acceso**:
-   - Habilita **Google** (elige el correo de soporte del Instituto).
-   - Habilita **Correo electrónico/contraseña** (deja *desactivado* “Vínculo del correo electrónico”).
-2. **Authentication → Configuración → Dominios autorizados**: verifica que estén `TU-PROYECTO.web.app` y `TU-PROYECTO.firebaseapp.com` (y tu dominio propio si lo agregas).
-3. **Authentication → Plantillas**: cambia el idioma a **Español** y personaliza el remitente de los correos de verificación y restablecimiento.
+1. En la consola del proyecto, menú izquierdo **Compilación → Authentication** → **Comenzar**.
+2. Pestaña **Método de acceso (Sign-in method)**:
+   - **Agregar proveedor → Correo electrónico/contraseña** → activa **solo** el primer interruptor (“Correo electrónico/contraseña”). El segundo, **“Vínculo del correo electrónico (acceso sin contraseña)”, debe quedar desactivado** → Guardar.
+   - **Agregar proveedor → Google** → Habilitar → elige el correo de asistencia del Instituto → Guardar.
+3. Pestaña **Configuración (Settings)**:
+   - **Dominios autorizados**: deben aparecer `TU-PROYECTO.web.app` y `TU-PROYECTO.firebaseapp.com` (y tu dominio propio si lo agregas).
+   - **Acciones de usuario / Protección contra la enumeración de correos**: déjala **activada** (es el valor predeterminado en proyectos nuevos).
+4. Pestaña **Plantillas (Templates)**:
+   - Botón de idioma (lápiz junto a “Idioma de la plantilla”) → **Español**.
+   - **Verificación de dirección de correo electrónico**: nombre del remitente “IJLV Comidas”. Si la consola permite editar el mensaje, agrega: *“Si tú no creaste una contraseña en IJLV Comidas, no abras este enlace e ignora este mensaje.”*
+   - **Restablecimiento de contraseña**: mismo remitente.
 
 #### Acceso con Google en iPhone
 

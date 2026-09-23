@@ -9,16 +9,29 @@ Navegador (React PWA)
 Firebase Hosting ── sirve la PWA (app shell cacheada por el service worker)
 ```
 
-## 1. Identidad y roles
+## 1. Identidad, autorización y roles
 
-- **Identidad = correo verificado** del token (`request.auth.token.email`, `email_verified == true`), comparado en minúsculas.
-- **Administrador**: existe `admins/{correo}`. Ningún cliente puede escribir en `admins` (ni siquiera un administrador). El primer admin se crea en la consola de Firebase. No hay custom claims (requerirían Admin SDK/Functions).
-- **Padre/madre**: existe `authorizedEmails/{correo}` → `familyId`. Varios correos pueden apuntar a la misma familia (preparado para dos tutores). Un correo pertenece a una sola familia.
-- Correo autenticado sin documento → no puede leer nada; la app muestra el mensaje de “no encontramos alumnos”.
+**Autenticarse no equivale a estar autorizado.**
 
-### Por qué no enlace mágico
+- **Autenticación** (quién eres): Firebase Auth con **Google** o **correo y contraseña**. El correo debe estar verificado; en correo+contraseña la verificación es obligatoria (pantalla “Verifica tu correo”). No se usa enlace mágico.
+- **Autorización** (qué puedes ver): **una sola capa para ambos métodos**, en `firestore.rules` y replicada en `services/access.ts` solo para decidir qué pantalla mostrar:
+  - `verified()`: hay sesión, el token trae `email` y `email_verified == true`.
+  - `isParent()`: `verified()` + existe `authorizedEmails/{correo del token en minúsculas}` (cargado por el IJLV) + la familia a la que apunta está `active == true`.
+  - `isAdmin()`: `verified()` + existe `admins/{correo}`.
+- Todo se evalúa en **cada petición** con el correo **actual** del token. No hay vínculo guardado entre la cuenta (uid) y la familia, así que un cambio de correo no hereda nada: la cuenta pierde el acceso anterior y solo obtiene otro si el nuevo correo está autorizado y verificado. El cliente vuelve a validar cuando cambia uid, correo o verificación (`SessionProvider`).
+- **La tabla correo → familia no es enumerable**: cada usuario solo puede hacer `get` de *su propio* `authorizedEmails/{correo}` y `admins/{correo}`; `list` solo lo hace un administrador. Una familia no puede consultar otras familias, otros correos ni alumnos ajenos; tampoco puede sondear pedidos de alumnos ajenos (ni los existentes ni los inexistentes).
+- Nunca se confía en `familyId`, `studentId` o `studentName` enviados por el cliente: se contrastan con `students/{id}` y con la familia del token.
+- **Administrador**: solo desde la consola de Firebase (`admins/{correo}`); ninguna escritura de cliente llega a esa colección.
 
-El envío de enlaces de acceso por correo está limitado a 5 por día en Spark. Se usa Google (sin cuota de correos) y correo+contraseña con verificación. Ver README.
+### Correo + contraseña: amenazas consideradas
+
+| Amenaza | Defensa |
+|---|---|
+| Alguien crea primero una cuenta con el correo de un padre | La cuenta no está verificada → sin acceso. El padre usa “Olvidé mi contraseña”: el enlace llega a su buzón, reemplaza la contraseña (la del intruso deja de servir) y deja el correo verificado. En Firebase real, el cambio de contraseña revoca las sesiones previas (el emulador no lo reproduce → prueba manual obligatoria). |
+| El padre abre un correo de verificación que no pidió | Riesgo residual: verificaría la cuenta del intruso. Mitigación: texto de la plantilla (“si no creaste una contraseña, ignóralo”) y “Olvidé mi contraseña” en cualquier duda; Google evita el caso. Endurecimiento posible: `docs/FUTURE_IDEAS.md`. |
+| Descubrir qué correos o alumnos existen | “Olvidé mi contraseña” responde igual siempre; protección contra enumeración de correos activada; `authorizedEmails` no enumerable. |
+| Cambiar el correo de la cuenta | La autorización usa siempre el correo actual y verificado. |
+| Hacerse administrador | `admins` sin escrituras de cliente; exige correo verificado. |
 
 ## 2. Colecciones
 
@@ -34,7 +47,7 @@ El envío de enlaces de acceso por correo está limitado a 5 por día en Spark. 
 | `menuAssets` | lunes `YYYY-MM-DD` | `dataUrl`, `mimeType`, `width`, `height`, `bytes`, `updatedAt` | miembros | admin |
 | `orders` | `{fecha}_{studentId}_{servicio}` | ver abajo | su familia; admin | ver reglas |
 
-“Miembros” = administradores y padres con correo autorizado.
+“Miembros” = administradores y padres con correo **verificado**, autorizado por el IJLV y de una familia activa.
 
 ### Pedido (`orders`)
 

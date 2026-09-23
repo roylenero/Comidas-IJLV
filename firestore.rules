@@ -3,11 +3,19 @@ rules_version = '2';
 // =============================================================================
 // IJLV Comidas — Reglas de seguridad de Cloud Firestore
 //
-// Principios:
-//  * Identidad = correo VERIFICADO del token de Firebase Auth (email_verified).
+// Principios (autenticarse NO equivale a estar autorizado):
+//  * Identidad = correo del token de Firebase Auth, SOLO si email_verified es
+//    true. Aplica igual a Google y a correo+contraseña: una cuenta creada con el
+//    correo de otra persona, sin verificar, no obtiene acceso a nada.
 //  * Administrador  = existe admins/{correo}. Solo se crea desde la consola de
 //    Firebase; ningún cliente puede escribir en admins (no hay autoasignación).
-//  * Padre/madre    = existe authorizedEmails/{correo} → familyId.
+//  * Padre/madre    = existe authorizedEmails/{correo} → familyId (cargado por
+//    el IJLV) y esa familia está activa. Cada usuario solo puede leer SU propio
+//    documento de authorizedEmails: la tabla correo→familia no es enumerable.
+//  * La autorización se evalúa en cada petición con el correo ACTUAL del token:
+//    si el correo cambia, el acceso se recalcula (no se hereda nada).
+//  * Nunca se confía en familyId/studentId enviados por el cliente: se comparan
+//    contra students/{id} y authorizedEmails/{correo del token}.
 //  * Todo horario se valida con request.time (hora del SERVIDOR) contra el
 //    cutoffAt guardado en menuDays. El reloj del dispositivo no interviene.
 //  * Anti-duplicados: el ID del pedido es {fecha}_{alumno}_{servicio}; un
@@ -40,17 +48,21 @@ service cloud.firestore {
       return verified() && exists(docPath('admins', myEmail()));
     }
 
-    function hasFamily() {
-      return verified() && exists(docPath('authorizedEmails', myEmail()));
-    }
-
     function myFamilyId() {
       return get(docPath('authorizedEmails', myEmail())).data.familyId;
     }
 
-    // Padre de familia activa o administrador.
+    // ÚNICA comprobación de "padre/madre autorizado", común a Google y a
+    // correo+contraseña: correo verificado + autorizado por el IJLV + familia activa.
+    function isParent() {
+      return verified()
+        && exists(docPath('authorizedEmails', myEmail()))
+        && get(docPath('families', myFamilyId())).data.active == true;
+    }
+
+    // Padre autorizado o administrador.
     function isMember() {
-      return isAdmin() || hasFamily();
+      return isAdmin() || isParent();
     }
 
     function isValidDate(value) {
@@ -90,7 +102,7 @@ service cloud.firestore {
 
     // ---------------------------------------------------------------- families
     match /families/{familyId} {
-      allow get: if isAdmin() || (hasFamily() && myFamilyId() == familyId);
+      allow get: if isAdmin() || (isParent() && myFamilyId() == familyId);
       allow list: if isAdmin();
       allow create, update: if isAdmin()
         && request.resource.data.keys().hasOnly(['name', 'active', 'createdAt', 'updatedAt'])
@@ -103,7 +115,7 @@ service cloud.firestore {
 
     // ---------------------------------------------------------------- students
     match /students/{studentId} {
-      allow read: if isAdmin() || (hasFamily() && resource.data.familyId == myFamilyId());
+      allow read: if isAdmin() || (isParent() && resource.data.familyId == myFamilyId());
       allow create, update: if isAdmin()
         && request.resource.data.keys().hasOnly(['name', 'familyId', 'active', 'createdAt', 'updatedAt'])
         && isShortText(request.resource.data.name, 120)
@@ -223,7 +235,7 @@ service cloud.firestore {
       let d = request.resource.data;
       let student = get(docPath('students', d.studentId)).data;
       let familyId = myFamilyId();
-      return hasFamily()
+      return isParent()
         && validOrderShape(orderId, d)
         && student.familyId == familyId
         && student.active == true
@@ -245,7 +257,7 @@ service cloud.firestore {
     function parentCanCancel() {
       let d = request.resource.data;
       let r = resource.data;
-      return hasFamily()
+      return isParent()
         && r.familyId == myFamilyId()
         && r.status == 'active'
         && d.status == 'cancelled'
@@ -261,7 +273,7 @@ service cloud.firestore {
       let r = resource.data;
       let familyId = myFamilyId();
       let student = get(docPath('students', r.studentId)).data;
-      return hasFamily()
+      return isParent()
         && r.familyId == familyId
         && student.familyId == familyId
         && student.active == true
@@ -307,9 +319,9 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow get: if isAdmin()
-        || (hasFamily() && resource == null && isMyMissingOrder(orderId))
-        || (hasFamily() && resource != null && resource.data.familyId == myFamilyId());
-      allow list: if isAdmin() || (hasFamily() && resource.data.familyId == myFamilyId());
+        || (isParent() && resource == null && isMyMissingOrder(orderId))
+        || (isParent() && resource != null && resource.data.familyId == myFamilyId());
+      allow list: if isAdmin() || (isParent() && resource.data.familyId == myFamilyId());
       allow create: if adminCanCreate(orderId) || parentCanCreate(orderId);
       allow update: if adminCanUpdate(orderId) || parentCanCancel() || parentCanReactivate();
       // El historial no se borra: se cancela.

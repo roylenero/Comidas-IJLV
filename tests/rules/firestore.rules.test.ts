@@ -51,8 +51,17 @@ const NO_SERVICE_DAY = '2031-03-05';
 const NO_BREAKFAST_DAY = '2031-03-06';
 const FUTURE_DAY = '2031-03-10';
 
-function dbFor(user: { uid: string; email: string }, emailVerified = true): Firestore {
-  return env.authenticatedContext(user.uid, { email: user.email, email_verified: emailVerified }).firestore() as unknown as Firestore;
+type Provider = 'password' | 'google.com';
+
+/** Contexto autenticado con el token que emitiría Firebase Auth para ese proveedor. */
+function dbFor(user: { uid: string; email: string }, emailVerified = true, provider: Provider = 'password'): Firestore {
+  return env
+    .authenticatedContext(user.uid, {
+      email: user.email,
+      email_verified: emailVerified,
+      firebase: { sign_in_provider: provider, identities: {} },
+    })
+    .firestore() as unknown as Firestore;
 }
 
 function menuDay(date: string, opts: { noService?: boolean; breakfast?: boolean; lunch?: boolean; cutoff: Timestamp }) {
@@ -481,5 +490,204 @@ describe('IMAGEN DEL MENÚ', () => {
     await assertSucceeds(setDoc(doc(dbFor(ADMIN), 'menuAssets', '2031-03-03'), asset(1000)));
     await assertFails(setDoc(doc(dbFor(ADMIN), 'menuAssets', '2031-03-10'), asset(720000)));
     await assertSucceeds(getDoc(doc(dbFor(PARENT_A), 'menuAssets', '2031-03-03')));
+  });
+});
+
+// ======================================================================
+// ENDURECIMIENTO: autenticarse NO equivale a estar autorizado
+// ======================================================================
+function familyDataAccess(db: Firestore) {
+  return {
+    family: () => getDoc(doc(db, 'families', 'fam-a')),
+    students: () => getDocs(query(collection(db, 'students'), where('familyId', '==', 'fam-a'))),
+    student: () => getDoc(doc(db, 'students', 'mateo')),
+    orders: () => getDocs(query(collection(db, 'orders'), where('familyId', '==', 'fam-a'))),
+    order: () => getDoc(doc(db, 'orders', orderId(CLOSED_DAY, 'mateo', 'lunch'))),
+    access: () => getDoc(doc(db, 'authorizedEmails', PARENT_A.email)),
+    menu: () => getDoc(doc(db, 'menuDays', OPEN_DAY)),
+    settings: () => getDoc(doc(db, 'settings', 'app')),
+  };
+}
+
+describe('A. correo y contraseña SIN verificar (el correo sí es de una familia)', () => {
+  it('1-4. no lee familia, alumnos, pedidos ni pagos, ni puede pedir', async () => {
+    const db = dbFor(PARENT_A, false, 'password');
+    const r = familyDataAccess(db);
+    await assertFails(r.family());
+    await assertFails(r.students());
+    await assertFails(r.student());
+    await assertFails(r.orders()); // incluye estados de pago
+    await assertFails(r.order());
+    await assertFails(r.access()); // ni siquiera ve a qué familia está asociado su correo
+    await assertFails(r.menu());
+    await assertFails(r.settings());
+    await assertFails(setDoc(doc(db, 'orders', orderId(OPEN_DAY, 'mateo', 'breakfast')), mateoBreakfast()));
+    await assertFails(
+      updateDoc(doc(db, 'orders', orderId(CLOSED_DAY, 'mateo', 'lunch')), {
+        status: 'cancelled',
+        updatedAt: serverTimestamp(),
+        updatedBy: PARENT_A.uid,
+      }),
+    );
+  });
+});
+
+describe('B. correo y contraseña VERIFICADO y autorizado', () => {
+  it('5-7. accede únicamente a su familia y sus hijos', async () => {
+    const db = dbFor(PARENT_A, true, 'password');
+    const r = familyDataAccess(db);
+    await assertSucceeds(r.family());
+    await assertSucceeds(r.students());
+    await assertSucceeds(r.student());
+    await assertSucceeds(r.orders());
+    await assertSucceeds(r.order());
+    await assertSucceeds(r.access());
+    await assertSucceeds(r.menu());
+    await assertFails(getDoc(doc(db, 'families', 'fam-b')));
+    await assertFails(getDoc(doc(db, 'students', 'lucia')));
+    await assertSucceeds(setDoc(doc(db, 'orders', orderId(OPEN_DAY, 'mateo', 'breakfast')), mateoBreakfast()));
+  });
+});
+
+describe('C. correo verificado pero NO registrado por el IJLV', () => {
+  it('8-11. no obtiene ningún dato familiar ni puede pedir', async () => {
+    const db = dbFor(STRANGER, true, 'password');
+    const r = familyDataAccess(db);
+    for (const p of [r.family, r.students, r.student, r.orders, r.order, r.access, r.menu, r.settings]) await assertFails(p());
+    await assertFails(
+      setDoc(
+        doc(db, 'orders', orderId(OPEN_DAY, 'mateo', 'breakfast')),
+        { ...mateoBreakfast(), createdBy: STRANGER.uid, updatedBy: STRANGER.uid },
+      ),
+    );
+    // No puede enumerar la tabla correo → familia ni las familias.
+    await assertFails(getDocs(collection(db, 'authorizedEmails')));
+    await assertFails(getDocs(collection(db, 'families')));
+  });
+});
+
+describe('D. intento de suplantación', () => {
+  it('12-13. un tercero crea una cuenta SIN verificar con el correo de una familia: sin acceso', async () => {
+    const attacker = { uid: 'attacker-uid', email: PARENT_A.email };
+    const db = dbFor(attacker, false, 'password');
+    const r = familyDataAccess(db);
+    for (const p of [r.family, r.students, r.student, r.orders, r.order, r.access, r.menu, r.settings]) await assertFails(p());
+    await assertFails(
+      setDoc(doc(db, 'orders', orderId(OPEN_DAY, 'mateo', 'breakfast')), {
+        ...mateoBreakfast(),
+        createdBy: attacker.uid,
+        updatedBy: attacker.uid,
+      }),
+    );
+  });
+
+  it('13b. tampoco sirve con mayúsculas distintas ni con el correo de un administrador', async () => {
+    await assertFails(getDoc(doc(dbFor({ uid: 'x', email: 'PAPA.A@DEMO.TEST' }, false), 'students', 'mateo')));
+    const fakeAdmin = dbFor({ uid: 'x2', email: ADMIN.email }, false);
+    await assertFails(getDocs(collection(fakeAdmin, 'orders')));
+    await assertFails(getDocs(collection(fakeAdmin, 'families')));
+    await assertFails(setDoc(doc(fakeAdmin, 'settings', 'app'), { prices: { breakfast: 1, lunch: 1 }, updatedAt: serverTimestamp() }));
+  });
+});
+
+describe('E y F. otra familia / otro alumno', () => {
+  it('14-15. Padre A no puede consultar la familia B', async () => {
+    const db = dbFor(PARENT_A);
+    await assertFails(getDoc(doc(db, 'families', 'fam-b')));
+    await assertFails(getDocs(query(collection(db, 'orders'), where('familyId', '==', 'fam-b'))));
+    await assertFails(getDoc(doc(db, 'orders', orderId(OPEN_DAY, 'lucia', 'lunch'))));
+  });
+
+  it('16-17. Padre A no puede usar el studentId de un alumno de la familia B', async () => {
+    const db = dbFor(PARENT_A);
+    await assertFails(getDoc(doc(db, 'students', 'lucia')));
+    // Ni declarando su propia familia, ni la familia B.
+    for (const familyId of ['fam-a', 'fam-b']) {
+      await assertFails(
+        setDoc(
+          doc(db, 'orders', orderId(OPEN_DAY, 'lucia', 'breakfast')),
+          parentOrder(PARENT_A, OPEN_DAY, 'lucia', 'Lucía Demo', familyId, 'breakfast', 55),
+        ),
+      );
+    }
+    // Ni cancelar el pedido existente de ese alumno.
+    await assertFails(
+      updateDoc(doc(db, 'orders', orderId(OPEN_DAY, 'lucia', 'lunch')), { status: 'cancelled', updatedAt: serverTimestamp(), updatedBy: PARENT_A.uid }),
+    );
+    // Ni sondear si existe un pedido de ese alumno.
+    await assertFails(getDoc(doc(db, 'orders', orderId(OPEN_DAY, 'lucia', 'breakfast'))));
+  });
+});
+
+describe('G. Google usa la MISMA autorización', () => {
+  it('18. Google con correo autorizado: acceso a su familia', async () => {
+    const db = dbFor(PARENT_A, true, 'google.com');
+    const r = familyDataAccess(db);
+    await assertSucceeds(r.family());
+    await assertSucceeds(r.students());
+    await assertSucceeds(r.orders());
+    await assertSucceeds(setDoc(doc(db, 'orders', orderId(OPEN_DAY, 'sofia', 'breakfast')), {
+      ...parentOrder(PARENT_A, OPEN_DAY, 'sofia', 'Sofía Demo', 'fam-a', 'breakfast', 55),
+    }));
+    await assertFails(getDoc(doc(db, 'students', 'lucia')));
+  });
+
+  it('19. Google con correo no autorizado: sin acceso familiar', async () => {
+    const db = dbFor(STRANGER, true, 'google.com');
+    const r = familyDataAccess(db);
+    for (const p of [r.family, r.students, r.student, r.orders, r.order, r.access, r.menu, r.settings]) await assertFails(p());
+  });
+
+  it('19b. Google con correo no verificado por Google: sin acceso', async () => {
+    const r = familyDataAccess(dbFor(PARENT_A, false, 'google.com'));
+    for (const p of [r.family, r.students, r.orders, r.menu]) await assertFails(p());
+  });
+});
+
+describe('H. cambio de correo', () => {
+  it('20. la misma cuenta con un correo nuevo (no autorizado) pierde el acceso a su familia anterior', async () => {
+    const db = dbFor({ uid: PARENT_A.uid, email: 'nuevo.correo@demo.test' }, true);
+    const r = familyDataAccess(db);
+    for (const p of [r.family, r.students, r.student, r.orders, r.order, r.menu]) await assertFails(p());
+    await assertFails(setDoc(doc(db, 'orders', orderId(OPEN_DAY, 'mateo', 'breakfast')), mateoBreakfast()));
+  });
+
+  it('20b. cambiar al correo de otra familia sin haberlo verificado no da acceso a esa familia', async () => {
+    const db = dbFor({ uid: PARENT_A.uid, email: PARENT_B.email }, false);
+    await assertFails(getDoc(doc(db, 'families', 'fam-b')));
+    await assertFails(getDoc(doc(db, 'students', 'lucia')));
+    await assertFails(getDoc(doc(db, 'families', 'fam-a')));
+  });
+
+  it('20c. si el IJLV retira el correo autorizado, el acceso termina en la siguiente petición', async () => {
+    const db = dbFor(PARENT_A);
+    await assertSucceeds(getDoc(doc(db, 'students', 'mateo')));
+    await assertSucceeds(deleteDoc(doc(dbFor(ADMIN), 'authorizedEmails', PARENT_A.email)));
+    await assertFails(getDoc(doc(db, 'students', 'mateo')));
+    await assertFails(getDocs(query(collection(db, 'orders'), where('familyId', '==', 'fam-a'))));
+  });
+});
+
+describe('Familia inactiva', () => {
+  it('una familia desactivada por el IJLV pierde el acceso a sus datos', async () => {
+    await assertSucceeds(updateDoc(doc(dbFor(ADMIN), 'families', 'fam-a'), { active: false, updatedAt: serverTimestamp() }));
+    const r = familyDataAccess(dbFor(PARENT_A));
+    for (const p of [r.family, r.students, r.student, r.orders, r.order, r.menu, r.settings]) await assertFails(p());
+    await assertFails(setDoc(doc(dbFor(PARENT_A), 'orders', orderId(OPEN_DAY, 'mateo', 'breakfast')), mateoBreakfast()));
+    // Su propio documento de autorización sí lo puede leer (así la app sabe mostrar "sin acceso").
+    await assertSucceeds(r.access());
+  });
+});
+
+describe('Administradores', () => {
+  it('nadie puede crearse admin: ni por cliente, ni cambiando correo sin verificar, ni escribiendo authorizedEmails', async () => {
+    for (const db of [dbFor(PARENT_A), dbFor(STRANGER), dbFor({ uid: PARENT_A.uid, email: ADMIN.email }, false)]) {
+      await assertFails(setDoc(doc(db, 'admins', PARENT_A.email), { createdAt: serverTimestamp() }));
+      await assertFails(setDoc(doc(db, 'admins', STRANGER.email), { createdAt: serverTimestamp() }));
+      await assertFails(getDocs(collection(db, 'admins')));
+      await assertFails(setDoc(doc(db, 'authorizedEmails', STRANGER.email), { familyId: 'fam-a', createdAt: serverTimestamp() }));
+    }
+    // Un admin real tampoco puede editar la colección admins desde el cliente.
+    await assertFails(deleteDoc(doc(dbFor(ADMIN), 'admins', ADMIN.email)));
   });
 });

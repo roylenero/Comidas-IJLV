@@ -1,11 +1,17 @@
 import { useState, type FormEvent } from 'react';
-import { Mail } from 'lucide-react';
+import { ArrowLeft, Mail } from 'lucide-react';
 import { APP_SHORT_NAME, INSTITUTION_NAME } from '../../config/business';
 import { describeError } from '../../lib/errors';
-import { createPasswordAccount, sendPasswordReset, signInWithGoogle, signInWithPassword } from '../../services/auth';
+import {
+  createPasswordAccount,
+  MIN_PASSWORD_LENGTH,
+  sendPasswordReset,
+  signInWithGoogle,
+  signInWithPassword,
+} from '../../services/auth';
 import { AuthShell } from './AuthShell';
 
-type Mode = 'signin' | 'create';
+type Step = 'choose' | 'signin' | 'create' | 'forgot';
 
 function GoogleIcon() {
   return (
@@ -18,13 +24,26 @@ function GoogleIcon() {
   );
 }
 
+const TITLES: Record<Exclude<Step, 'choose'>, string> = {
+  signin: 'Entrar con correo',
+  create: 'Crear tu contraseña',
+  forgot: 'Olvidé mi contraseña',
+};
+
 export function LoginPage({ redirectError }: { redirectError?: string | null }) {
-  const [mode, setMode] = useState<Mode>('signin');
+  const [step, setStep] = useState<Step>('choose');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(redirectError ?? null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  function go(next: Step) {
+    setStep(next);
+    setError(null);
+    setNotice(null);
+    setPassword('');
+  }
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -41,50 +60,64 @@ export function LoginPage({ redirectError }: { redirectError?: string | null }) 
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    run(() => (mode === 'signin' ? signInWithPassword(email, password) : createPasswordAccount(email, password)));
+    if (step === 'signin') run(() => signInWithPassword(email, password));
+    if (step === 'create') run(() => createPasswordAccount(email, password));
+    if (step === 'forgot')
+      run(async () => {
+        await sendPasswordReset(email);
+        setNotice(
+          'Si hay una cuenta con ese correo, te enviamos un mensaje para crear una contraseña nueva. Revisa también el correo no deseado.',
+        );
+      });
   }
 
-  function onForgot() {
-    if (!email.trim()) {
-      setError('Escribe tu correo arriba y vuelve a tocar "Olvidé mi contraseña".');
-      return;
-    }
-    run(async () => {
-      await sendPasswordReset(email);
-      setNotice(`Si ${email.trim()} tiene cuenta, te enviamos un correo para crear una contraseña nueva. Revisa también "Spam".`);
-    });
+  const messages = (
+    <>
+      {error && (
+        <p className="banner banner--danger" role="alert">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className="banner banner--success" role="status">
+          {notice}
+        </p>
+      )}
+    </>
+  );
+
+  if (step === 'choose') {
+    return (
+      <AuthShell>
+        <div className="stack-sm center">
+          <h1>{APP_SHORT_NAME}</h1>
+          <p className="muted">Pedidos de desayuno y comida del {INSTITUTION_NAME}.</p>
+        </div>
+        <button type="button" className="btn btn--secondary btn--block btn--lg" onClick={() => run(signInWithGoogle)} disabled={busy}>
+          <GoogleIcon /> Continuar con Google
+        </button>
+        <div className="row" aria-hidden="true">
+          <hr className="divider grow" />
+          <span className="muted small">o</span>
+          <hr className="divider grow" />
+        </div>
+        <button type="button" className="btn btn--secondary btn--block btn--lg" onClick={() => go('signin')} disabled={busy}>
+          <Mail size={20} aria-hidden="true" /> Entrar con correo
+        </button>
+        <p className="muted small center">Usa el correo que registraste en el Instituto.</p>
+        {messages}
+      </AuthShell>
+    );
   }
 
   return (
     <AuthShell>
-      <div className="stack-sm center">
-        <h1>{APP_SHORT_NAME}</h1>
-        <p className="muted">Pedidos de desayuno y comida del {INSTITUTION_NAME}.</p>
-      </div>
-
-      <div className="banner banner--info">
-        <Mail size={18} aria-hidden="true" />
-        <span>Entra con el correo que registraste en el Instituto. Solo lo harás una vez en este dispositivo.</span>
-      </div>
-
-      <button type="button" className="btn btn--secondary btn--block btn--lg" onClick={() => run(signInWithGoogle)} disabled={busy}>
-        <GoogleIcon /> Continuar con Google
+      <button type="button" className="btn btn--ghost btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => go(step === 'signin' ? 'choose' : 'signin')}>
+        <ArrowLeft size={18} aria-hidden="true" /> Volver
       </button>
-
-      <div className="row" aria-hidden="true">
-        <hr className="divider grow" />
-        <span className="muted small">o con correo y contraseña</span>
-        <hr className="divider grow" />
-      </div>
-
-      <div className="segmented" role="group" aria-label="Tipo de acceso" style={{ alignSelf: 'stretch' }}>
-        <button type="button" className="grow" aria-pressed={mode === 'signin'} onClick={() => setMode('signin')}>
-          Ya tengo cuenta
-        </button>
-        <button type="button" className="grow" aria-pressed={mode === 'create'} onClick={() => setMode('create')}>
-          Primera vez
-        </button>
-      </div>
+      <h1>{TITLES[step]}</h1>
+      {step === 'create' && <p className="muted">Te enviaremos un mensaje a tu correo para confirmar que es tuyo.</p>}
+      {step === 'forgot' && <p className="muted">Te enviaremos un mensaje para crear una contraseña nueva.</p>}
 
       <form className="stack" onSubmit={onSubmit} noValidate>
         <div className="field">
@@ -103,48 +136,55 @@ export function LoginPage({ redirectError }: { redirectError?: string | null }) 
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
-        <div className="field">
-          <label className="field__label" htmlFor="password">
-            {mode === 'signin' ? 'Contraseña' : 'Crea una contraseña'}
-          </label>
-          <input
-            id="password"
-            className="input"
-            type="password"
-            autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-            minLength={6}
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            aria-describedby={mode === 'create' ? 'password-hint' : undefined}
-          />
-          {mode === 'create' && (
-            <span id="password-hint" className="field__hint">
-              Mínimo 6 caracteres. Te enviaremos un correo para confirmar que es tuyo.
-            </span>
-          )}
-        </div>
-
-        {error && (
-          <p className="banner banner--danger" role="alert">
-            {error}
-          </p>
-        )}
-        {notice && (
-          <p className="banner banner--success" role="status">
-            {notice}
-          </p>
+        {step !== 'forgot' && (
+          <div className="field">
+            <label className="field__label" htmlFor="password">
+              {step === 'signin' ? 'Contraseña' : 'Nueva contraseña'}
+            </label>
+            <input
+              id="password"
+              className="input"
+              type="password"
+              autoComplete={step === 'signin' ? 'current-password' : 'new-password'}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              aria-describedby={step === 'create' ? 'password-hint' : undefined}
+            />
+            {step === 'create' && (
+              <span id="password-hint" className="field__hint">
+                Mínimo {MIN_PASSWORD_LENGTH} caracteres.
+              </span>
+            )}
+          </div>
         )}
 
-        <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={busy || !email || !password}>
-          {busy ? 'Un momento…' : mode === 'signin' ? 'Entrar' : 'Crear contraseña y entrar'}
+        {messages}
+
+        <button
+          type="submit"
+          className="btn btn--primary btn--block btn--lg"
+          disabled={busy || !email.trim() || (step !== 'forgot' && !password)}
+        >
+          {busy ? 'Un momento…' : step === 'signin' ? 'Entrar' : step === 'create' ? 'Crear contraseña' : 'Enviar mensaje'}
         </button>
-        {mode === 'signin' && (
-          <button type="button" className="btn btn--ghost" onClick={onForgot} disabled={busy}>
+      </form>
+
+      {step === 'signin' && (
+        <div className="stack-sm">
+          <button type="button" className="btn btn--ghost" onClick={() => go('forgot')}>
             Olvidé mi contraseña
           </button>
-        )}
-      </form>
+          <button type="button" className="btn btn--ghost" onClick={() => go('create')}>
+            ¿Primera vez? Crear contraseña
+          </button>
+        </div>
+      )}
+      {step === 'create' && (
+        <button type="button" className="btn btn--ghost" onClick={() => go('signin')}>
+          Ya tengo contraseña
+        </button>
+      )}
     </AuthShell>
   );
 }

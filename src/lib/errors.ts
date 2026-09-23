@@ -19,8 +19,8 @@ const AUTH_MESSAGES: Record<string, string> = {
   'auth/user-not-found': 'Correo o contraseña incorrectos.',
   'auth/missing-password': 'Escribe tu contraseña.',
   'auth/email-already-in-use':
-    'Ya existe una cuenta con este correo. Elige "Ya tengo contraseña" o usa "Olvidé mi contraseña".',
-  'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+    'Este correo ya tiene una contraseña. Entra con ella o usa "Olvidé mi contraseña" para crear una nueva.',
+  'auth/weak-password': 'La contraseña es demasiado débil. Usa al menos 8 caracteres.',
   'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.',
   'auth/network-request-failed': 'No hay conexión a internet. Revisa tu conexión e inténtalo de nuevo.',
   'auth/popup-closed-by-user': 'Se cerró la ventana de Google antes de terminar. Inténtalo de nuevo.',
@@ -31,7 +31,7 @@ const AUTH_MESSAGES: Record<string, string> = {
   'auth/operation-not-allowed': 'Este método de acceso no está habilitado. Comunícate con el Instituto.',
   'auth/unauthorized-domain': 'Este dominio no está autorizado para iniciar sesión. Comunícate con el Instituto.',
   'auth/account-exists-with-different-credential':
-    'Este correo ya entra con otro método. Usa "Correo y contraseña" o "Olvidé mi contraseña".',
+    'Este correo ya entra con otro método. Prueba "Continuar con Google" o "Olvidé mi contraseña".',
   'auth/user-disabled': 'Esta cuenta está desactivada. Comunícate con el Instituto.',
 };
 

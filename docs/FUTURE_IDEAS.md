@@ -10,7 +10,8 @@ No están implementadas a propósito. Cada una debería pasar la pregunta: *¿ha
 - **Plantilla de menú**: copiar el menú de la semana anterior como punto de partida.
 
 ## Acceso
-- **Enlace mágico por correo** si algún día se activa facturación (el límite de Spark es de 5 envíos diarios).
+- **Página propia para los enlaces de verificación** (URL de acción personalizada en la plantilla de Firebase) que pregunte “¿Creaste tú una contraseña en IJLV Comidas?” antes de verificar; cerraría el riesgo residual de verificar sin querer una cuenta creada por otra persona.
+- **Revocar sesiones de un padre desde administración** (requiere Admin SDK / Cloud Functions, es decir, plan Blaze).
 - **Acceso con Microsoft** para familias con Outlook/Hotmail (gratuito, requiere registrar una app en Azure).
 
 ## Pagos (V2)
