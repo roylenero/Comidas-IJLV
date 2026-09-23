@@ -101,3 +101,10 @@ export function formatWeekRange(weekStart: ISODate): string {
 }
 
 export { capitalize };
+
+/** Siguiente/anterior día hábil (salta sábado y domingo). */
+export function shiftWeekday(date: ISODate, delta: 1 | -1): ISODate {
+  let dt = parseISODate(date).plus({ days: delta });
+  while (dt.weekday >= 6) dt = dt.plus({ days: delta });
+  return dt.toISODate()!;
+}

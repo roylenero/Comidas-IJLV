@@ -6,7 +6,7 @@ import { signOut } from '../../services/auth';
 
 const LINKS = [
   { to: '/admin', label: 'Hoy', icon: LayoutDashboard, end: true },
-  { to: '/admin/pedido-manual', label: 'Registrar pedido', icon: PlusCircle },
+  { to: '/admin/pedido-manual', label: 'Pedido manual', icon: PlusCircle },
   { to: '/admin/menu', label: 'Menú', icon: CalendarDays },
   { to: '/admin/familias', label: 'Familias', icon: Users },
   { to: '/admin/pagos', label: 'Pagos', icon: CreditCard },
@@ -23,7 +23,7 @@ export function AdminLayout() {
       <header className="app-header app-header--admin">
         <div className="app-header__inner">
           <Brand to="/admin" />
-          <span className="badge badge--info">Administración</span>
+          <span className="visually-hidden">Administración</span>
           <nav className="nav" aria-label="Administración">
             {LINKS.map(({ to, label, icon: Icon, end }) => (
               <NavLink key={to} to={to} end={end} className="nav__link">

@@ -217,6 +217,9 @@
 .image-preview {
   max-height: 360px;
   width: auto;
+  max-width: 100%;
+  align-self: flex-start;
+  object-fit: contain;
   border-radius: var(--radius);
   border: 1px solid var(--border);
 }
@@ -247,3 +250,27 @@
 
 .inline-form { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .inline-form .input { flex: 1; min-width: 12rem; }
+
+@media print {
+  .app-header,
+  .tabbar,
+  .no-print,
+  .offline-banner,
+  .skip-link { display: none !important; }
+  body { background: #fff; }
+  .card { border: 0; padding: 0; }
+  .page { padding: 0; }
+}
+
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  padding: var(--space-3) 0 calc(var(--space-3) + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bg) 75%, transparent);
+}
+
+@media (max-width: 480px) {
+  .stat { padding: var(--space-4); }
+  .stat .btn { padding: 0 var(--space-2); font-size: var(--text-sm); }
+}

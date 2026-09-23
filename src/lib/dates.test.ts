@@ -64,3 +64,12 @@ describe('fechas locales', () => {
     expect(defaultDayInWeek('2026-09-28', mx('2026-09-27T08:00:00'))).toBe('2026-09-28');
   });
 });
+
+describe('shiftWeekday', () => {
+  it('salta el fin de semana', async () => {
+    const { shiftWeekday } = await import('./dates');
+    expect(shiftWeekday('2026-10-02', 1)).toBe('2026-10-05');
+    expect(shiftWeekday('2026-10-05', -1)).toBe('2026-10-02');
+    expect(shiftWeekday('2026-09-29', 1)).toBe('2026-09-30');
+  });
+});
